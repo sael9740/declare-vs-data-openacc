@@ -90,7 +90,6 @@ contains
     write (*,'(a)') trim(label)
     write (*,'(a,f12.3,a)') '  avg entry = ', avg_entry * 1.0e6_real64, ' us'
     write (*,'(a,f12.3,a)') '  avg exit  = ', avg_exit  * 1.0e6_real64, ' us'
-    write (*,'(a,i0)')      '  calls     = ', stats(variant)%calls
   end subroutine print_stats
 
 end module bench_many_mod
@@ -297,7 +296,7 @@ contains
 end module many_create_3d_kernels
 
 program many_create_3d_repro
-  use iso_fortran_env, only: error_unit, int64, real32, real64
+  use iso_fortran_env, only: error_unit, real32
   use openacc
   use bench_many_mod
   use many_create_3d_kernels
@@ -310,7 +309,6 @@ program many_create_3d_repro
   integer :: resident_map_count
   integer :: resident_map_elems
   integer :: resident_map_gap
-  integer(int64) :: resident_map_bytes
   logical :: show_help
 
   real(real32), allocatable :: a(:,:,:), b(:,:,:), c_decl(:,:,:), d_decl(:,:,:), c_data(:,:,:), d_data(:,:,:)
@@ -327,7 +325,6 @@ program many_create_3d_repro
 
   call parse_args(ni, nk, nj, repeats, resident_map_count, resident_map_elems, resident_map_gap, show_help)
   if (show_help) go to 900
-  resident_map_bytes = int(resident_map_count, int64) * int(resident_map_elems, int64) * 4_int64
 
   allocate(a(ni,nk,nj), b(ni,nk,nj), c_decl(ni,nk,nj), d_decl(ni,nk,nj), c_data(ni,nk,nj), d_data(ni,nk,nj))
   allocate(resident_map_pool(resident_map_elems + resident_map_gap, resident_map_count))
@@ -366,12 +363,8 @@ program many_create_3d_repro
   !$acc exit data delete(a,b,c_decl,c_data,d_decl,d_data)
 
   write (*,'(a)') 'OpenACC declare-vs-data present-table reproducer'
-  write (*,'(a,i0)') '  ni = ', ni
-  write (*,'(a,i0)') '  nk = ', nk
-  write (*,'(a,i0)') '  nj = ', nj
-  write (*,'(a,i0)') '  repeats = ', repeats
+  write (*,'(a,i0,a,i0,a,i0,a,i0)') '  ni = ', ni, ', nk = ', nk, ', nj = ', nj, ', repeats = ', repeats
   write (*,'(a,i0,a,i0,a,i0,a)') '  resident mappings = ', resident_map_count, ' x ', resident_map_elems, ' reals (gap ', resident_map_gap, ')'
-  write (*,'(a,f10.3,a)') '  resident mapping bytes = ', real(resident_map_bytes, real64) / 1048576.0_real64, ' MiB'
   write (*,*)
 
   call print_stats('declare version', variant_declare)
