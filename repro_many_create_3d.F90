@@ -9,7 +9,6 @@ module bench_many_mod
   type :: bench_stats
     real(real64) :: entry_sum = 0.0_real64
     real(real64) :: exit_sum  = 0.0_real64
-    real(real64) :: total_sum = 0.0_real64
     integer      :: calls     = 0
   end type bench_stats
 
@@ -37,7 +36,6 @@ contains
   subroutine reset_stats()
     stats(:)%entry_sum = 0.0_real64
     stats(:)%exit_sum  = 0.0_real64
-    stats(:)%total_sum = 0.0_real64
     stats(:)%calls     = 0
     call_t0(:)         = 0.0_real64
     exit_t0(:)         = 0.0_real64
@@ -72,7 +70,6 @@ contains
 
     t1 = wall_time()
     stats(variant)%exit_sum  = stats(variant)%exit_sum + (t1 - exit_t0(variant))
-    stats(variant)%total_sum = stats(variant)%total_sum + (t1 - call_t0(variant))
     stats(variant)%calls     = stats(variant)%calls + 1
   end subroutine note_call_end
 
@@ -81,7 +78,6 @@ contains
     integer, intent(in)          :: variant
     real(real64)                 :: avg_entry
     real(real64)                 :: avg_exit
-    real(real64)                 :: avg_total
 
     if (stats(variant)%calls == 0) then
       write (*,'(a)') trim(label)//': no timed calls'
@@ -90,46 +86,23 @@ contains
 
     avg_entry = stats(variant)%entry_sum / real(stats(variant)%calls, real64)
     avg_exit  = stats(variant)%exit_sum  / real(stats(variant)%calls, real64)
-    avg_total = stats(variant)%total_sum / real(stats(variant)%calls, real64)
 
     write (*,'(a)') trim(label)
-    write (*,'(a,f12.6,a)') '  avg entry = ', avg_entry, ' s'
-    write (*,'(a,f12.6,a)') '  avg exit  = ', avg_exit,  ' s'
-    write (*,'(a,f12.6,a)') '  avg total = ', avg_total, ' s'
-    write (*,'(a,f12.6,a)') '  sum entry = ', stats(variant)%entry_sum, ' s'
-    write (*,'(a,f12.6,a)') '  sum exit  = ', stats(variant)%exit_sum,  ' s'
+    write (*,'(a,f12.3,a)') '  avg entry = ', avg_entry * 1.0e6_real64, ' us'
+    write (*,'(a,f12.3,a)') '  avg exit  = ', avg_exit  * 1.0e6_real64, ' us'
     write (*,'(a,i0)')      '  calls     = ', stats(variant)%calls
   end subroutine print_stats
 
 end module bench_many_mod
 
 module many_create_3d_kernels
-  use iso_c_binding, only: c_associated, c_null_ptr, c_ptr, c_size_t
-  use iso_fortran_env, only: int64, real32
-  use openacc, only: acc_device_nvidia, acc_get_device_num, acc_get_property, acc_property_free_memory
+  use iso_fortran_env, only: real32
   use bench_many_mod, only: note_entry, note_exit_start, variant_data, variant_declare
   implicit none
 
-  interface
-    function acc_malloc_c(bytes) bind(c, name="acc_malloc") result(devptr)
-      use iso_c_binding, only: c_ptr, c_size_t
-      implicit none
-
-      integer(c_size_t), value :: bytes
-      type(c_ptr)              :: devptr
-    end function acc_malloc_c
-
-    subroutine acc_free_c(devptr) bind(c, name="acc_free")
-      use iso_c_binding, only: c_ptr
-      implicit none
-
-      type(c_ptr), value :: devptr
-    end subroutine acc_free_c
-  end interface
-
 contains
 
-  subroutine lsmruc_many_declare(a, b, c, d, ni, nk, nj)
+  subroutine lsmruc_declare(a, b, c, d, ni, nk, nj)
     implicit none
 
     integer, intent(in)         :: ni, nk, nj
@@ -170,166 +143,63 @@ contains
 
     call note_entry(variant_declare)
 
-    !$acc parallel loop collapse(3) gang vector present(a,b,c, &
+    !$acc serial present( &
     !$acc  t001,t002,t003,t004,t005,t006,t007,t008, &
     !$acc  t009,t010,t011,t012,t013,t014,t015,t016, &
     !$acc  t017,t018,t019,t020,t021,t022,t023,t024, &
-    !$acc  t025,t026,t027,t028,t029,t030,t031,t032)
-    do j = 1, nj
-      do k = 1, nk
-        do i = 1, ni
-          t001(i,k,j) = a(i,k,j) + 0.001_real32 * b(i,k,j) + 0.0001_real32 * c(i,k,j)
-          t002(i,k,j) = t001(i,k,j) + 0.002_real32 * b(i,k,j)
-          t003(i,k,j) = t002(i,k,j) - 0.003_real32 * a(i,k,j)
-          t004(i,k,j) = t003(i,k,j) + 0.0004_real32 * c(i,k,j)
-          t005(i,k,j) = t004(i,k,j) + 0.005_real32
-          t006(i,k,j) = t005(i,k,j) + 0.006_real32 * b(i,k,j)
-          t007(i,k,j) = t006(i,k,j) - 0.007_real32 * a(i,k,j)
-          t008(i,k,j) = t007(i,k,j) + 0.0008_real32 * c(i,k,j)
-          t009(i,k,j) = t008(i,k,j) + 0.009_real32
-          t010(i,k,j) = t009(i,k,j) + 0.010_real32 * b(i,k,j)
-          t011(i,k,j) = t010(i,k,j) - 0.011_real32 * a(i,k,j)
-          t012(i,k,j) = t011(i,k,j) + 0.0012_real32 * c(i,k,j)
-          t013(i,k,j) = t012(i,k,j) + 0.013_real32
-          t014(i,k,j) = t013(i,k,j) + 0.014_real32 * b(i,k,j)
-          t015(i,k,j) = t014(i,k,j) - 0.015_real32 * a(i,k,j)
-          t016(i,k,j) = t015(i,k,j) + 0.0016_real32 * c(i,k,j)
-          t017(i,k,j) = t016(i,k,j) + 0.017_real32
-          t018(i,k,j) = t017(i,k,j) + 0.018_real32 * b(i,k,j)
-          t019(i,k,j) = t018(i,k,j) - 0.019_real32 * a(i,k,j)
-          t020(i,k,j) = t019(i,k,j) + 0.0020_real32 * c(i,k,j)
-          t021(i,k,j) = t020(i,k,j) + 0.021_real32
-          t022(i,k,j) = t021(i,k,j) + 0.022_real32 * b(i,k,j)
-          t023(i,k,j) = t022(i,k,j) - 0.023_real32 * a(i,k,j)
-          t024(i,k,j) = t023(i,k,j) + 0.0024_real32 * c(i,k,j)
-          t025(i,k,j) = t024(i,k,j) + 0.025_real32
-          t026(i,k,j) = t025(i,k,j) + 0.026_real32 * b(i,k,j)
-          t027(i,k,j) = t026(i,k,j) - 0.027_real32 * a(i,k,j)
-          t028(i,k,j) = t027(i,k,j) + 0.0028_real32 * c(i,k,j)
-          t029(i,k,j) = t028(i,k,j) + 0.029_real32
-          t030(i,k,j) = t029(i,k,j) + 0.030_real32 * b(i,k,j)
-          t031(i,k,j) = t030(i,k,j) - 0.031_real32 * a(i,k,j)
-          t032(i,k,j) = t031(i,k,j) + 0.0032_real32 * c(i,k,j)
-        end do
-      end do
-    end do
-    !$acc end parallel loop
-
-    !$acc parallel loop collapse(3) gang vector present(a,b,c, &
-    !$acc  t024,t032,t033,t034,t035,t036,t037,t038,t039,t040, &
+    !$acc  t025,t026,t027,t028,t029,t030,t031,t032, &
+    !$acc  t033,t034,t035,t036,t037,t038,t039,t040, &
     !$acc  t041,t042,t043,t044,t045,t046,t047,t048, &
     !$acc  t049,t050,t051,t052,t053,t054,t055,t056, &
-    !$acc  t057,t058,t059,t060,t061,t062,t063,t064)
-    do j = 1, nj
-      do k = 1, nk
-        do i = 1, ni
-          t033(i,k,j) = t032(i,k,j) + 0.0033_real32 * a(i,k,j) + 0.0003_real32 * t024(i,k,j)
-          t034(i,k,j) = t033(i,k,j) + 0.0034_real32 * t024(i,k,j)
-          t035(i,k,j) = t034(i,k,j) - 0.035_real32 * b(i,k,j)
-          t036(i,k,j) = t035(i,k,j) + 0.0036_real32 * c(i,k,j)
-          t037(i,k,j) = t036(i,k,j) + 0.037_real32 * a(i,k,j)
-          t038(i,k,j) = t037(i,k,j) + 0.0038_real32 * t024(i,k,j)
-          t039(i,k,j) = t038(i,k,j) - 0.039_real32 * b(i,k,j)
-          t040(i,k,j) = t039(i,k,j) + 0.0040_real32 * c(i,k,j)
-          t041(i,k,j) = t040(i,k,j) + 0.041_real32 * a(i,k,j)
-          t042(i,k,j) = t041(i,k,j) + 0.0042_real32 * t024(i,k,j)
-          t043(i,k,j) = t042(i,k,j) - 0.043_real32 * b(i,k,j)
-          t044(i,k,j) = t043(i,k,j) + 0.0044_real32 * c(i,k,j)
-          t045(i,k,j) = t044(i,k,j) + 0.045_real32 * a(i,k,j)
-          t046(i,k,j) = t045(i,k,j) + 0.0046_real32 * t024(i,k,j)
-          t047(i,k,j) = t046(i,k,j) - 0.047_real32 * b(i,k,j)
-          t048(i,k,j) = t047(i,k,j) + 0.0048_real32 * c(i,k,j)
-          t049(i,k,j) = t048(i,k,j) + 0.049_real32 * a(i,k,j)
-          t050(i,k,j) = t049(i,k,j) + 0.0050_real32 * t024(i,k,j)
-          t051(i,k,j) = t050(i,k,j) - 0.051_real32 * b(i,k,j)
-          t052(i,k,j) = t051(i,k,j) + 0.0052_real32 * c(i,k,j)
-          t053(i,k,j) = t052(i,k,j) + 0.053_real32 * a(i,k,j)
-          t054(i,k,j) = t053(i,k,j) + 0.0054_real32 * t024(i,k,j)
-          t055(i,k,j) = t054(i,k,j) - 0.055_real32 * b(i,k,j)
-          t056(i,k,j) = t055(i,k,j) + 0.0056_real32 * c(i,k,j)
-          t057(i,k,j) = t056(i,k,j) + 0.057_real32 * a(i,k,j)
-          t058(i,k,j) = t057(i,k,j) + 0.0058_real32 * t024(i,k,j)
-          t059(i,k,j) = t058(i,k,j) - 0.059_real32 * b(i,k,j)
-          t060(i,k,j) = t059(i,k,j) + 0.0060_real32 * c(i,k,j)
-          t061(i,k,j) = t060(i,k,j) + 0.061_real32 * a(i,k,j)
-          t062(i,k,j) = t061(i,k,j) + 0.0062_real32 * t024(i,k,j)
-          t063(i,k,j) = t062(i,k,j) - 0.063_real32 * b(i,k,j)
-          t064(i,k,j) = t063(i,k,j) + 0.0064_real32 * c(i,k,j)
-        end do
-      end do
-    end do
-    !$acc end parallel loop
-
-    !$acc parallel loop collapse(3) gang vector present(a,b,c, &
-    !$acc  t048,t064,t065,t066,t067,t068,t069,t070,t071,t072, &
+    !$acc  t057,t058,t059,t060,t061,t062,t063,t064, &
+    !$acc  t065,t066,t067,t068,t069,t070,t071,t072, &
     !$acc  t073,t074,t075,t076,t077,t078,t079,t080, &
     !$acc  t081,t082,t083,t084,t085,t086,t087,t088, &
-    !$acc  t089,t090,t091,t092,t093,t094,t095,t096)
-    do j = 1, nj
-      do k = 1, nk
-        do i = 1, ni
-          t065(i,k,j) = t064(i,k,j) + 0.0065_real32 * b(i,k,j) + 0.0005_real32 * t048(i,k,j)
-          t066(i,k,j) = t065(i,k,j) + 0.0066_real32 * t048(i,k,j)
-          t067(i,k,j) = t066(i,k,j) - 0.067_real32 * c(i,k,j)
-          t068(i,k,j) = t067(i,k,j) + 0.0068_real32 * a(i,k,j)
-          t069(i,k,j) = t068(i,k,j) + 0.069_real32 * b(i,k,j)
-          t070(i,k,j) = t069(i,k,j) + 0.0070_real32 * t048(i,k,j)
-          t071(i,k,j) = t070(i,k,j) - 0.071_real32 * c(i,k,j)
-          t072(i,k,j) = t071(i,k,j) + 0.0072_real32 * a(i,k,j)
-          t073(i,k,j) = t072(i,k,j) + 0.073_real32 * b(i,k,j)
-          t074(i,k,j) = t073(i,k,j) + 0.0074_real32 * t048(i,k,j)
-          t075(i,k,j) = t074(i,k,j) - 0.075_real32 * c(i,k,j)
-          t076(i,k,j) = t075(i,k,j) + 0.0076_real32 * a(i,k,j)
-          t077(i,k,j) = t076(i,k,j) + 0.077_real32 * b(i,k,j)
-          t078(i,k,j) = t077(i,k,j) + 0.0078_real32 * t048(i,k,j)
-          t079(i,k,j) = t078(i,k,j) - 0.079_real32 * c(i,k,j)
-          t080(i,k,j) = t079(i,k,j) + 0.0080_real32 * a(i,k,j)
-          t081(i,k,j) = t080(i,k,j) + 0.081_real32 * b(i,k,j)
-          t082(i,k,j) = t081(i,k,j) + 0.0082_real32 * t048(i,k,j)
-          t083(i,k,j) = t082(i,k,j) - 0.083_real32 * c(i,k,j)
-          t084(i,k,j) = t083(i,k,j) + 0.0084_real32 * a(i,k,j)
-          t085(i,k,j) = t084(i,k,j) + 0.085_real32 * b(i,k,j)
-          t086(i,k,j) = t085(i,k,j) + 0.0086_real32 * t048(i,k,j)
-          t087(i,k,j) = t086(i,k,j) - 0.087_real32 * c(i,k,j)
-          t088(i,k,j) = t087(i,k,j) + 0.0088_real32 * a(i,k,j)
-          t089(i,k,j) = t088(i,k,j) + 0.089_real32 * b(i,k,j)
-          t090(i,k,j) = t089(i,k,j) + 0.0090_real32 * t048(i,k,j)
-          t091(i,k,j) = t090(i,k,j) - 0.091_real32 * c(i,k,j)
-          t092(i,k,j) = t091(i,k,j) + 0.0092_real32 * a(i,k,j)
-          t093(i,k,j) = t092(i,k,j) + 0.093_real32 * b(i,k,j)
-          t094(i,k,j) = t093(i,k,j) + 0.0094_real32 * t048(i,k,j)
-          t095(i,k,j) = t094(i,k,j) - 0.095_real32 * c(i,k,j)
-          t096(i,k,j) = t095(i,k,j) + 0.0096_real32 * a(i,k,j)
-        end do
-      end do
-    end do
-    !$acc end parallel loop
-
-    !$acc parallel loop collapse(3) gang vector present(a,c,d, &
-    !$acc  t008,t024,t040,t072,t088,t096, &
+    !$acc  t089,t090,t091,t092,t093,t094,t095,t096, &
     !$acc  t097,t098,t099,t100,t101,t102,t103,t104)
+    t001(1,1,1) = 1.0_real32;  t002(1,1,1) = 2.0_real32;  t003(1,1,1) = 3.0_real32;  t004(1,1,1) = 4.0_real32
+    t005(1,1,1) = 5.0_real32;  t006(1,1,1) = 6.0_real32;  t007(1,1,1) = 7.0_real32;  t008(1,1,1) = 8.0_real32
+    t009(1,1,1) = 9.0_real32;  t010(1,1,1) = 10.0_real32; t011(1,1,1) = 11.0_real32; t012(1,1,1) = 12.0_real32
+    t013(1,1,1) = 13.0_real32; t014(1,1,1) = 14.0_real32; t015(1,1,1) = 15.0_real32; t016(1,1,1) = 16.0_real32
+    t017(1,1,1) = 17.0_real32; t018(1,1,1) = 18.0_real32; t019(1,1,1) = 19.0_real32; t020(1,1,1) = 20.0_real32
+    t021(1,1,1) = 21.0_real32; t022(1,1,1) = 22.0_real32; t023(1,1,1) = 23.0_real32; t024(1,1,1) = 24.0_real32
+    t025(1,1,1) = 25.0_real32; t026(1,1,1) = 26.0_real32; t027(1,1,1) = 27.0_real32; t028(1,1,1) = 28.0_real32
+    t029(1,1,1) = 29.0_real32; t030(1,1,1) = 30.0_real32; t031(1,1,1) = 31.0_real32; t032(1,1,1) = 32.0_real32
+    t033(1,1,1) = 33.0_real32; t034(1,1,1) = 34.0_real32; t035(1,1,1) = 35.0_real32; t036(1,1,1) = 36.0_real32
+    t037(1,1,1) = 37.0_real32; t038(1,1,1) = 38.0_real32; t039(1,1,1) = 39.0_real32; t040(1,1,1) = 40.0_real32
+    t041(1,1,1) = 41.0_real32; t042(1,1,1) = 42.0_real32; t043(1,1,1) = 43.0_real32; t044(1,1,1) = 44.0_real32
+    t045(1,1,1) = 45.0_real32; t046(1,1,1) = 46.0_real32; t047(1,1,1) = 47.0_real32; t048(1,1,1) = 48.0_real32
+    t049(1,1,1) = 49.0_real32; t050(1,1,1) = 50.0_real32; t051(1,1,1) = 51.0_real32; t052(1,1,1) = 52.0_real32
+    t053(1,1,1) = 53.0_real32; t054(1,1,1) = 54.0_real32; t055(1,1,1) = 55.0_real32; t056(1,1,1) = 56.0_real32
+    t057(1,1,1) = 57.0_real32; t058(1,1,1) = 58.0_real32; t059(1,1,1) = 59.0_real32; t060(1,1,1) = 60.0_real32
+    t061(1,1,1) = 61.0_real32; t062(1,1,1) = 62.0_real32; t063(1,1,1) = 63.0_real32; t064(1,1,1) = 64.0_real32
+    t065(1,1,1) = 65.0_real32; t066(1,1,1) = 66.0_real32; t067(1,1,1) = 67.0_real32; t068(1,1,1) = 68.0_real32
+    t069(1,1,1) = 69.0_real32; t070(1,1,1) = 70.0_real32; t071(1,1,1) = 71.0_real32; t072(1,1,1) = 72.0_real32
+    t073(1,1,1) = 73.0_real32; t074(1,1,1) = 74.0_real32; t075(1,1,1) = 75.0_real32; t076(1,1,1) = 76.0_real32
+    t077(1,1,1) = 77.0_real32; t078(1,1,1) = 78.0_real32; t079(1,1,1) = 79.0_real32; t080(1,1,1) = 80.0_real32
+    t081(1,1,1) = 81.0_real32; t082(1,1,1) = 82.0_real32; t083(1,1,1) = 83.0_real32; t084(1,1,1) = 84.0_real32
+    t085(1,1,1) = 85.0_real32; t086(1,1,1) = 86.0_real32; t087(1,1,1) = 87.0_real32; t088(1,1,1) = 88.0_real32
+    t089(1,1,1) = 89.0_real32; t090(1,1,1) = 90.0_real32; t091(1,1,1) = 91.0_real32; t092(1,1,1) = 92.0_real32
+    t093(1,1,1) = 93.0_real32; t094(1,1,1) = 94.0_real32; t095(1,1,1) = 95.0_real32; t096(1,1,1) = 96.0_real32
+    t097(1,1,1) = 97.0_real32; t098(1,1,1) = 98.0_real32; t099(1,1,1) = 99.0_real32; t100(1,1,1) = 100.0_real32
+    t101(1,1,1) = 101.0_real32; t102(1,1,1) = 102.0_real32; t103(1,1,1) = 103.0_real32; t104(1,1,1) = 104.0_real32
+    !$acc end serial
+
+    !$acc parallel loop collapse(3) gang vector present(a,b,c,d,t052,t104)
     do j = 1, nj
       do k = 1, nk
         do i = 1, ni
-          t097(i,k,j) = t096(i,k,j) + 0.0097_real32 * a(i,k,j) + 0.0007_real32 * t072(i,k,j)
-          t098(i,k,j) = t097(i,k,j) + 0.0098_real32 * t088(i,k,j)
-          t099(i,k,j) = t098(i,k,j) - 0.0099_real32 * t040(i,k,j)
-          t100(i,k,j) = t099(i,k,j) + 0.0100_real32 * t088(i,k,j)
-          t101(i,k,j) = t100(i,k,j) - 0.0101_real32 * t040(i,k,j)
-          t102(i,k,j) = t101(i,k,j) + 0.0102_real32 * t088(i,k,j)
-          t103(i,k,j) = t102(i,k,j) - 0.0103_real32 * t040(i,k,j)
-          t104(i,k,j) = t103(i,k,j) + 0.0104_real32 * t088(i,k,j)
-          d(i,k,j) = t104(i,k,j) + 0.1_real32 * t072(i,k,j) + 0.01_real32 * t040(i,k,j) + 0.001_real32 * t008(i,k,j)
-          c(i,k,j) = 0.5_real32 * t088(i,k,j) - 0.25_real32 * t096(i,k,j) + 0.05_real32 * t024(i,k,j)
+          d(i,k,j) = a(i,k,j) + b(i,k,j) + 1.0e-6_real32 * t104(1,1,1)
+          c(i,k,j) = c(i,k,j) + 1.0e-6_real32 * t052(1,1,1)
         end do
       end do
     end do
     !$acc end parallel loop
 
     call note_exit_start(variant_declare)
-  end subroutine lsmruc_many_declare
+  end subroutine lsmruc_declare
 
-  subroutine lsmruc_many_data(a, b, c, d, ni, nk, nj)
+  subroutine lsmruc_data(a, b, c, d, ni, nk, nj)
     implicit none
 
     integer, intent(in)         :: ni, nk, nj
@@ -367,157 +237,54 @@ contains
     !$acc  create(t097,t098,t099,t100,t101,t102,t103,t104)
     call note_entry(variant_data)
 
-    !$acc parallel loop collapse(3) gang vector present(a,b,c, &
+    !$acc serial present( &
     !$acc  t001,t002,t003,t004,t005,t006,t007,t008, &
     !$acc  t009,t010,t011,t012,t013,t014,t015,t016, &
     !$acc  t017,t018,t019,t020,t021,t022,t023,t024, &
-    !$acc  t025,t026,t027,t028,t029,t030,t031,t032)
-    do j = 1, nj
-      do k = 1, nk
-        do i = 1, ni
-          t001(i,k,j) = a(i,k,j) + 0.001_real32 * b(i,k,j) + 0.0001_real32 * c(i,k,j)
-          t002(i,k,j) = t001(i,k,j) + 0.002_real32 * b(i,k,j)
-          t003(i,k,j) = t002(i,k,j) - 0.003_real32 * a(i,k,j)
-          t004(i,k,j) = t003(i,k,j) + 0.0004_real32 * c(i,k,j)
-          t005(i,k,j) = t004(i,k,j) + 0.005_real32
-          t006(i,k,j) = t005(i,k,j) + 0.006_real32 * b(i,k,j)
-          t007(i,k,j) = t006(i,k,j) - 0.007_real32 * a(i,k,j)
-          t008(i,k,j) = t007(i,k,j) + 0.0008_real32 * c(i,k,j)
-          t009(i,k,j) = t008(i,k,j) + 0.009_real32
-          t010(i,k,j) = t009(i,k,j) + 0.010_real32 * b(i,k,j)
-          t011(i,k,j) = t010(i,k,j) - 0.011_real32 * a(i,k,j)
-          t012(i,k,j) = t011(i,k,j) + 0.0012_real32 * c(i,k,j)
-          t013(i,k,j) = t012(i,k,j) + 0.013_real32
-          t014(i,k,j) = t013(i,k,j) + 0.014_real32 * b(i,k,j)
-          t015(i,k,j) = t014(i,k,j) - 0.015_real32 * a(i,k,j)
-          t016(i,k,j) = t015(i,k,j) + 0.0016_real32 * c(i,k,j)
-          t017(i,k,j) = t016(i,k,j) + 0.017_real32
-          t018(i,k,j) = t017(i,k,j) + 0.018_real32 * b(i,k,j)
-          t019(i,k,j) = t018(i,k,j) - 0.019_real32 * a(i,k,j)
-          t020(i,k,j) = t019(i,k,j) + 0.0020_real32 * c(i,k,j)
-          t021(i,k,j) = t020(i,k,j) + 0.021_real32
-          t022(i,k,j) = t021(i,k,j) + 0.022_real32 * b(i,k,j)
-          t023(i,k,j) = t022(i,k,j) - 0.023_real32 * a(i,k,j)
-          t024(i,k,j) = t023(i,k,j) + 0.0024_real32 * c(i,k,j)
-          t025(i,k,j) = t024(i,k,j) + 0.025_real32
-          t026(i,k,j) = t025(i,k,j) + 0.026_real32 * b(i,k,j)
-          t027(i,k,j) = t026(i,k,j) - 0.027_real32 * a(i,k,j)
-          t028(i,k,j) = t027(i,k,j) + 0.0028_real32 * c(i,k,j)
-          t029(i,k,j) = t028(i,k,j) + 0.029_real32
-          t030(i,k,j) = t029(i,k,j) + 0.030_real32 * b(i,k,j)
-          t031(i,k,j) = t030(i,k,j) - 0.031_real32 * a(i,k,j)
-          t032(i,k,j) = t031(i,k,j) + 0.0032_real32 * c(i,k,j)
-        end do
-      end do
-    end do
-    !$acc end parallel loop
-
-    !$acc parallel loop collapse(3) gang vector present(a,b,c, &
-    !$acc  t024,t032,t033,t034,t035,t036,t037,t038,t039,t040, &
+    !$acc  t025,t026,t027,t028,t029,t030,t031,t032, &
+    !$acc  t033,t034,t035,t036,t037,t038,t039,t040, &
     !$acc  t041,t042,t043,t044,t045,t046,t047,t048, &
     !$acc  t049,t050,t051,t052,t053,t054,t055,t056, &
-    !$acc  t057,t058,t059,t060,t061,t062,t063,t064)
-    do j = 1, nj
-      do k = 1, nk
-        do i = 1, ni
-          t033(i,k,j) = t032(i,k,j) + 0.0033_real32 * a(i,k,j) + 0.0003_real32 * t024(i,k,j)
-          t034(i,k,j) = t033(i,k,j) + 0.0034_real32 * t024(i,k,j)
-          t035(i,k,j) = t034(i,k,j) - 0.035_real32 * b(i,k,j)
-          t036(i,k,j) = t035(i,k,j) + 0.0036_real32 * c(i,k,j)
-          t037(i,k,j) = t036(i,k,j) + 0.037_real32 * a(i,k,j)
-          t038(i,k,j) = t037(i,k,j) + 0.0038_real32 * t024(i,k,j)
-          t039(i,k,j) = t038(i,k,j) - 0.039_real32 * b(i,k,j)
-          t040(i,k,j) = t039(i,k,j) + 0.0040_real32 * c(i,k,j)
-          t041(i,k,j) = t040(i,k,j) + 0.041_real32 * a(i,k,j)
-          t042(i,k,j) = t041(i,k,j) + 0.0042_real32 * t024(i,k,j)
-          t043(i,k,j) = t042(i,k,j) - 0.043_real32 * b(i,k,j)
-          t044(i,k,j) = t043(i,k,j) + 0.0044_real32 * c(i,k,j)
-          t045(i,k,j) = t044(i,k,j) + 0.045_real32 * a(i,k,j)
-          t046(i,k,j) = t045(i,k,j) + 0.0046_real32 * t024(i,k,j)
-          t047(i,k,j) = t046(i,k,j) - 0.047_real32 * b(i,k,j)
-          t048(i,k,j) = t047(i,k,j) + 0.0048_real32 * c(i,k,j)
-          t049(i,k,j) = t048(i,k,j) + 0.049_real32 * a(i,k,j)
-          t050(i,k,j) = t049(i,k,j) + 0.0050_real32 * t024(i,k,j)
-          t051(i,k,j) = t050(i,k,j) - 0.051_real32 * b(i,k,j)
-          t052(i,k,j) = t051(i,k,j) + 0.0052_real32 * c(i,k,j)
-          t053(i,k,j) = t052(i,k,j) + 0.053_real32 * a(i,k,j)
-          t054(i,k,j) = t053(i,k,j) + 0.0054_real32 * t024(i,k,j)
-          t055(i,k,j) = t054(i,k,j) - 0.055_real32 * b(i,k,j)
-          t056(i,k,j) = t055(i,k,j) + 0.0056_real32 * c(i,k,j)
-          t057(i,k,j) = t056(i,k,j) + 0.057_real32 * a(i,k,j)
-          t058(i,k,j) = t057(i,k,j) + 0.0058_real32 * t024(i,k,j)
-          t059(i,k,j) = t058(i,k,j) - 0.059_real32 * b(i,k,j)
-          t060(i,k,j) = t059(i,k,j) + 0.0060_real32 * c(i,k,j)
-          t061(i,k,j) = t060(i,k,j) + 0.061_real32 * a(i,k,j)
-          t062(i,k,j) = t061(i,k,j) + 0.0062_real32 * t024(i,k,j)
-          t063(i,k,j) = t062(i,k,j) - 0.063_real32 * b(i,k,j)
-          t064(i,k,j) = t063(i,k,j) + 0.0064_real32 * c(i,k,j)
-        end do
-      end do
-    end do
-    !$acc end parallel loop
-
-    !$acc parallel loop collapse(3) gang vector present(a,b,c, &
-    !$acc  t048,t064,t065,t066,t067,t068,t069,t070,t071,t072, &
+    !$acc  t057,t058,t059,t060,t061,t062,t063,t064, &
+    !$acc  t065,t066,t067,t068,t069,t070,t071,t072, &
     !$acc  t073,t074,t075,t076,t077,t078,t079,t080, &
     !$acc  t081,t082,t083,t084,t085,t086,t087,t088, &
-    !$acc  t089,t090,t091,t092,t093,t094,t095,t096)
-    do j = 1, nj
-      do k = 1, nk
-        do i = 1, ni
-          t065(i,k,j) = t064(i,k,j) + 0.0065_real32 * b(i,k,j) + 0.0005_real32 * t048(i,k,j)
-          t066(i,k,j) = t065(i,k,j) + 0.0066_real32 * t048(i,k,j)
-          t067(i,k,j) = t066(i,k,j) - 0.067_real32 * c(i,k,j)
-          t068(i,k,j) = t067(i,k,j) + 0.0068_real32 * a(i,k,j)
-          t069(i,k,j) = t068(i,k,j) + 0.069_real32 * b(i,k,j)
-          t070(i,k,j) = t069(i,k,j) + 0.0070_real32 * t048(i,k,j)
-          t071(i,k,j) = t070(i,k,j) - 0.071_real32 * c(i,k,j)
-          t072(i,k,j) = t071(i,k,j) + 0.0072_real32 * a(i,k,j)
-          t073(i,k,j) = t072(i,k,j) + 0.073_real32 * b(i,k,j)
-          t074(i,k,j) = t073(i,k,j) + 0.0074_real32 * t048(i,k,j)
-          t075(i,k,j) = t074(i,k,j) - 0.075_real32 * c(i,k,j)
-          t076(i,k,j) = t075(i,k,j) + 0.0076_real32 * a(i,k,j)
-          t077(i,k,j) = t076(i,k,j) + 0.077_real32 * b(i,k,j)
-          t078(i,k,j) = t077(i,k,j) + 0.0078_real32 * t048(i,k,j)
-          t079(i,k,j) = t078(i,k,j) - 0.079_real32 * c(i,k,j)
-          t080(i,k,j) = t079(i,k,j) + 0.0080_real32 * a(i,k,j)
-          t081(i,k,j) = t080(i,k,j) + 0.081_real32 * b(i,k,j)
-          t082(i,k,j) = t081(i,k,j) + 0.0082_real32 * t048(i,k,j)
-          t083(i,k,j) = t082(i,k,j) - 0.083_real32 * c(i,k,j)
-          t084(i,k,j) = t083(i,k,j) + 0.0084_real32 * a(i,k,j)
-          t085(i,k,j) = t084(i,k,j) + 0.085_real32 * b(i,k,j)
-          t086(i,k,j) = t085(i,k,j) + 0.0086_real32 * t048(i,k,j)
-          t087(i,k,j) = t086(i,k,j) - 0.087_real32 * c(i,k,j)
-          t088(i,k,j) = t087(i,k,j) + 0.0088_real32 * a(i,k,j)
-          t089(i,k,j) = t088(i,k,j) + 0.089_real32 * b(i,k,j)
-          t090(i,k,j) = t089(i,k,j) + 0.0090_real32 * t048(i,k,j)
-          t091(i,k,j) = t090(i,k,j) - 0.091_real32 * c(i,k,j)
-          t092(i,k,j) = t091(i,k,j) + 0.0092_real32 * a(i,k,j)
-          t093(i,k,j) = t092(i,k,j) + 0.093_real32 * b(i,k,j)
-          t094(i,k,j) = t093(i,k,j) + 0.0094_real32 * t048(i,k,j)
-          t095(i,k,j) = t094(i,k,j) - 0.095_real32 * c(i,k,j)
-          t096(i,k,j) = t095(i,k,j) + 0.0096_real32 * a(i,k,j)
-        end do
-      end do
-    end do
-    !$acc end parallel loop
-
-    !$acc parallel loop collapse(3) gang vector present(a,c,d, &
-    !$acc  t008,t024,t040,t072,t088,t096, &
+    !$acc  t089,t090,t091,t092,t093,t094,t095,t096, &
     !$acc  t097,t098,t099,t100,t101,t102,t103,t104)
+    t001(1,1,1) = 1.0_real32;  t002(1,1,1) = 2.0_real32;  t003(1,1,1) = 3.0_real32;  t004(1,1,1) = 4.0_real32
+    t005(1,1,1) = 5.0_real32;  t006(1,1,1) = 6.0_real32;  t007(1,1,1) = 7.0_real32;  t008(1,1,1) = 8.0_real32
+    t009(1,1,1) = 9.0_real32;  t010(1,1,1) = 10.0_real32; t011(1,1,1) = 11.0_real32; t012(1,1,1) = 12.0_real32
+    t013(1,1,1) = 13.0_real32; t014(1,1,1) = 14.0_real32; t015(1,1,1) = 15.0_real32; t016(1,1,1) = 16.0_real32
+    t017(1,1,1) = 17.0_real32; t018(1,1,1) = 18.0_real32; t019(1,1,1) = 19.0_real32; t020(1,1,1) = 20.0_real32
+    t021(1,1,1) = 21.0_real32; t022(1,1,1) = 22.0_real32; t023(1,1,1) = 23.0_real32; t024(1,1,1) = 24.0_real32
+    t025(1,1,1) = 25.0_real32; t026(1,1,1) = 26.0_real32; t027(1,1,1) = 27.0_real32; t028(1,1,1) = 28.0_real32
+    t029(1,1,1) = 29.0_real32; t030(1,1,1) = 30.0_real32; t031(1,1,1) = 31.0_real32; t032(1,1,1) = 32.0_real32
+    t033(1,1,1) = 33.0_real32; t034(1,1,1) = 34.0_real32; t035(1,1,1) = 35.0_real32; t036(1,1,1) = 36.0_real32
+    t037(1,1,1) = 37.0_real32; t038(1,1,1) = 38.0_real32; t039(1,1,1) = 39.0_real32; t040(1,1,1) = 40.0_real32
+    t041(1,1,1) = 41.0_real32; t042(1,1,1) = 42.0_real32; t043(1,1,1) = 43.0_real32; t044(1,1,1) = 44.0_real32
+    t045(1,1,1) = 45.0_real32; t046(1,1,1) = 46.0_real32; t047(1,1,1) = 47.0_real32; t048(1,1,1) = 48.0_real32
+    t049(1,1,1) = 49.0_real32; t050(1,1,1) = 50.0_real32; t051(1,1,1) = 51.0_real32; t052(1,1,1) = 52.0_real32
+    t053(1,1,1) = 53.0_real32; t054(1,1,1) = 54.0_real32; t055(1,1,1) = 55.0_real32; t056(1,1,1) = 56.0_real32
+    t057(1,1,1) = 57.0_real32; t058(1,1,1) = 58.0_real32; t059(1,1,1) = 59.0_real32; t060(1,1,1) = 60.0_real32
+    t061(1,1,1) = 61.0_real32; t062(1,1,1) = 62.0_real32; t063(1,1,1) = 63.0_real32; t064(1,1,1) = 64.0_real32
+    t065(1,1,1) = 65.0_real32; t066(1,1,1) = 66.0_real32; t067(1,1,1) = 67.0_real32; t068(1,1,1) = 68.0_real32
+    t069(1,1,1) = 69.0_real32; t070(1,1,1) = 70.0_real32; t071(1,1,1) = 71.0_real32; t072(1,1,1) = 72.0_real32
+    t073(1,1,1) = 73.0_real32; t074(1,1,1) = 74.0_real32; t075(1,1,1) = 75.0_real32; t076(1,1,1) = 76.0_real32
+    t077(1,1,1) = 77.0_real32; t078(1,1,1) = 78.0_real32; t079(1,1,1) = 79.0_real32; t080(1,1,1) = 80.0_real32
+    t081(1,1,1) = 81.0_real32; t082(1,1,1) = 82.0_real32; t083(1,1,1) = 83.0_real32; t084(1,1,1) = 84.0_real32
+    t085(1,1,1) = 85.0_real32; t086(1,1,1) = 86.0_real32; t087(1,1,1) = 87.0_real32; t088(1,1,1) = 88.0_real32
+    t089(1,1,1) = 89.0_real32; t090(1,1,1) = 90.0_real32; t091(1,1,1) = 91.0_real32; t092(1,1,1) = 92.0_real32
+    t093(1,1,1) = 93.0_real32; t094(1,1,1) = 94.0_real32; t095(1,1,1) = 95.0_real32; t096(1,1,1) = 96.0_real32
+    t097(1,1,1) = 97.0_real32; t098(1,1,1) = 98.0_real32; t099(1,1,1) = 99.0_real32; t100(1,1,1) = 100.0_real32
+    t101(1,1,1) = 101.0_real32; t102(1,1,1) = 102.0_real32; t103(1,1,1) = 103.0_real32; t104(1,1,1) = 104.0_real32
+    !$acc end serial
+
+    !$acc parallel loop collapse(3) gang vector present(a,b,c,d,t052,t104)
     do j = 1, nj
       do k = 1, nk
         do i = 1, ni
-          t097(i,k,j) = t096(i,k,j) + 0.0097_real32 * a(i,k,j) + 0.0007_real32 * t072(i,k,j)
-          t098(i,k,j) = t097(i,k,j) + 0.0098_real32 * t088(i,k,j)
-          t099(i,k,j) = t098(i,k,j) - 0.0099_real32 * t040(i,k,j)
-          t100(i,k,j) = t099(i,k,j) + 0.0100_real32 * t088(i,k,j)
-          t101(i,k,j) = t100(i,k,j) - 0.0101_real32 * t040(i,k,j)
-          t102(i,k,j) = t101(i,k,j) + 0.0102_real32 * t088(i,k,j)
-          t103(i,k,j) = t102(i,k,j) - 0.0103_real32 * t040(i,k,j)
-          t104(i,k,j) = t103(i,k,j) + 0.0104_real32 * t088(i,k,j)
-          d(i,k,j) = t104(i,k,j) + 0.1_real32 * t072(i,k,j) + 0.01_real32 * t040(i,k,j) + 0.001_real32 * t008(i,k,j)
-          c(i,k,j) = 0.5_real32 * t088(i,k,j) - 0.25_real32 * t096(i,k,j) + 0.05_real32 * t024(i,k,j)
+          d(i,k,j) = a(i,k,j) + b(i,k,j) + 1.0e-6_real32 * t104(1,1,1)
+          c(i,k,j) = c(i,k,j) + 1.0e-6_real32 * t052(1,1,1)
         end do
       end do
     end do
@@ -525,330 +292,218 @@ contains
 
     call note_exit_start(variant_data)
     !$acc end data
-  end subroutine lsmruc_many_data
-
-  subroutine allocator_polluter(ni, nk, nj, passes)
-    implicit none
-
-    integer, intent(in) :: ni, nk, nj, passes
-    integer, parameter  :: max_chunks = 48
-    integer(int64), parameter :: min_chunk_bytes = 8_int64 * 1024_int64 * 1024_int64
-    integer(int64), parameter :: align_bytes     = 4096_int64
-    type(c_ptr)         :: bufs(max_chunks)
-    integer(int64)      :: free_bytes
-    integer(int64)      :: target_bytes
-    integer(int64)      :: remaining_bytes
-    integer(int64)      :: request_bytes
-    integer(int64)      :: baseline_bytes
-    integer(int64)      :: perturb_bytes
-    integer(int64)      :: max_chunk_bytes
-    integer             :: allocated_chunks
-    integer             :: devnum
-    integer             :: ipass
-    integer             :: ichunk
-    integer             :: nchunks
-    integer             :: slots_left
-
-    if (passes <= 0) return
-    if (ni <= 0 .or. nk <= 0 .or. nj <= 0) return
-
-    devnum = acc_get_device_num(acc_device_nvidia)
-    if (devnum < 0) return
-
-    bufs(:) = c_null_ptr
-
-    do ipass = 1, passes
-      free_bytes   = acc_get_property(devnum, acc_device_nvidia, acc_property_free_memory)
-      target_bytes = free_bytes * 8_int64 / 10_int64
-      if (target_bytes < min_chunk_bytes) cycle
-
-      nchunks = int(min(int(max_chunks, int64), max(1_int64, target_bytes / min_chunk_bytes)))
-      remaining_bytes = target_bytes
-      allocated_chunks = 0
-      bufs(:) = c_null_ptr
-
-      do ichunk = 1, nchunks
-        slots_left = nchunks - ichunk + 1
-        baseline_bytes = remaining_bytes / int(slots_left, int64)
-        perturb_bytes  = max(1_int64, baseline_bytes / 5_int64)
-
-        select case (mod(ichunk - 1, 4))
-        case (0)
-          request_bytes = baseline_bytes + perturb_bytes
-        case (1)
-          request_bytes = baseline_bytes - perturb_bytes / 2_int64
-        case (2)
-          request_bytes = baseline_bytes + perturb_bytes / 3_int64
-        case default
-          request_bytes = baseline_bytes - perturb_bytes
-        end select
-
-        if (slots_left > 1) then
-          max_chunk_bytes = remaining_bytes - min_chunk_bytes * int(slots_left - 1, int64)
-          request_bytes = min(request_bytes, max_chunk_bytes)
-        else
-          request_bytes = remaining_bytes
-        end if
-
-        request_bytes = max(min_chunk_bytes, align_down_int64(request_bytes, align_bytes))
-
-        do while (request_bytes >= min_chunk_bytes)
-          bufs(ichunk) = acc_malloc_c(int(request_bytes, c_size_t))
-          if (c_associated(bufs(ichunk))) exit
-          request_bytes = align_down_int64(request_bytes / 2_int64, align_bytes)
-        end do
-
-        if (.not. c_associated(bufs(ichunk))) exit
-
-        allocated_chunks = ichunk
-        remaining_bytes = max(0_int64, remaining_bytes - request_bytes)
-        if (remaining_bytes < min_chunk_bytes) exit
-      end do
-
-      do ichunk = allocated_chunks, 1, -1
-        if (c_associated(bufs(ichunk))) call acc_free_c(bufs(ichunk))
-      end do
-    end do
-  end subroutine allocator_polluter
-
-  integer(int64) function align_down_int64(value, alignment)
-    implicit none
-
-    integer(int64), intent(in) :: value
-    integer(int64), intent(in) :: alignment
-
-    if (alignment <= 0_int64) then
-      align_down_int64 = value
-    else
-      align_down_int64 = (value / alignment) * alignment
-    end if
-  end function align_down_int64
+  end subroutine lsmruc_data
 
 end module many_create_3d_kernels
 
 program many_create_3d_repro
-  use iso_fortran_env, only: real32, real64
+  use iso_fortran_env, only: error_unit, int64, real32, real64
   use openacc
   use bench_many_mod
   use many_create_3d_kernels
   implicit none
 
-  integer, parameter :: jitter_count = 8
-  integer, parameter :: jitter_ni_delta(jitter_count) = [0, 3, 9, -4, 7, -8, 5, -2]
-  integer, parameter :: jitter_nk_delta(jitter_count) = [0, 0, 0, 1, -1, 2, -1, 1]
-  integer, parameter :: jitter_nj_delta(jitter_count) = [0, -3, -9, 2, 5, -4, 8, -6]
-
   integer :: ni
   integer :: nk
   integer :: nj
   integer :: repeats
-  integer :: polluter_passes
-  integer :: jitter_enable
   integer :: resident_map_count
   integer :: resident_map_elems
   integer :: resident_map_gap
-  integer :: ni_alloc
-  integer :: nk_alloc
-  integer :: nj_alloc
-  integer :: ni_call
-  integer :: nk_call
-  integer :: nj_call
   integer(int64) :: resident_map_bytes
-  integer :: i
-  integer :: j
-  integer :: k
+  logical :: show_help
+
   real(real32), allocatable :: a(:,:,:), b(:,:,:), c_decl(:,:,:), d_decl(:,:,:), c_data(:,:,:), d_data(:,:,:)
   real(real32), allocatable :: resident_map_pool(:,:)
-  real(real64) :: c_diff
-  real(real64) :: d_diff
+  integer      :: i
 
-  ni      = 500
-  nk      = 6
-  nj      = 500
+  ni = 500
+  nk = 6
+  nj = 500
   repeats = 100
-  polluter_passes = 1
-  jitter_enable = 1
-  resident_map_count = 0
-  resident_map_elems = 256
+  resident_map_count = 20000
+  resident_map_elems = 64
   resident_map_gap   = 17
-  call parse_args(ni, nk, nj, repeats, polluter_passes, jitter_enable, resident_map_count, resident_map_elems)
-  call get_alloc_shape(ni, nk, nj, jitter_enable, ni_alloc, nk_alloc, nj_alloc)
-  resident_map_bytes = int(max(0, resident_map_count), int64) * int(max(0, resident_map_elems), int64) * &
-                       int(storage_size(0.0_real32) / 8, int64)
 
-  allocate(a(ni_alloc,nk_alloc,nj_alloc), b(ni_alloc,nk_alloc,nj_alloc), &
-           c_decl(ni_alloc,nk_alloc,nj_alloc), d_decl(ni_alloc,nk_alloc,nj_alloc), &
-           c_data(ni_alloc,nk_alloc,nj_alloc), d_data(ni_alloc,nk_alloc,nj_alloc))
+  call parse_args(ni, nk, nj, repeats, resident_map_count, resident_map_elems, resident_map_gap, show_help)
+  if (show_help) go to 900
+  resident_map_bytes = int(resident_map_count, int64) * int(resident_map_elems, int64) * 4_int64
 
-  call init_inputs(a, b, c_decl, c_data, d_decl, d_data, ni_alloc, nk_alloc, nj_alloc)
+  allocate(a(ni,nk,nj), b(ni,nk,nj), c_decl(ni,nk,nj), d_decl(ni,nk,nj), c_data(ni,nk,nj), d_data(ni,nk,nj))
+  allocate(resident_map_pool(resident_map_elems + resident_map_gap, resident_map_count))
+
+  call init_inputs(a, b, c_decl, c_data, d_decl, d_data)
+  resident_map_pool(:,:) = 0.0_real32
 
   call acc_init(acc_device_nvidia)
 
   !$acc enter data copyin(a,b,c_decl,c_data) create(d_decl,d_data)
-  call setup_resident_mapping_stress(resident_map_pool, resident_map_count, resident_map_elems, resident_map_gap)
+  call setup_resident_mapping_stress(resident_map_pool)
 
   call set_timing(.false.)
-  call get_call_shape(ni, nk, nj, 1, jitter_enable, ni_call, nk_call, nj_call)
-  call lsmruc_many_declare(a(1:ni_call,1:nk_call,1:nj_call), b(1:ni_call,1:nk_call,1:nj_call), &
-                           c_decl(1:ni_call,1:nk_call,1:nj_call), d_decl(1:ni_call,1:nk_call,1:nj_call), &
-                           ni_call, nk_call, nj_call)
-  call lsmruc_many_data(a(1:ni_call,1:nk_call,1:nj_call), b(1:ni_call,1:nk_call,1:nj_call), &
-                        c_data(1:ni_call,1:nk_call,1:nj_call), d_data(1:ni_call,1:nk_call,1:nj_call), &
-                        ni_call, nk_call, nj_call)
+  call lsmruc_declare(a, b, c_decl, d_decl, ni, nk, nj)
+  call lsmruc_data(a, b, c_data, d_data, ni, nk, nj)
   call set_timing(.true.)
 
-  call init_inputs(a, b, c_decl, c_data, d_decl, d_data, ni_alloc, nk_alloc, nj_alloc)
+  call init_inputs(a, b, c_decl, c_data, d_decl, d_data)
   !$acc update device(a,b,c_decl,c_data,d_decl,d_data)
 
   call reset_stats()
 
   do i = 1, repeats
-    call get_call_shape(ni, nk, nj, i, jitter_enable, ni_call, nk_call, nj_call)
     call note_call_start(variant_declare)
-    call lsmruc_many_declare(a(1:ni_call,1:nk_call,1:nj_call), b(1:ni_call,1:nk_call,1:nj_call), &
-                             c_decl(1:ni_call,1:nk_call,1:nj_call), d_decl(1:ni_call,1:nk_call,1:nj_call), &
-                             ni_call, nk_call, nj_call)
+    call lsmruc_declare(a, b, c_decl, d_decl, ni, nk, nj)
     call note_call_end(variant_declare)
-    call allocator_polluter(ni_call, nk_call, nj_call, polluter_passes)
   end do
 
   do i = 1, repeats
-    call get_call_shape(ni, nk, nj, i, jitter_enable, ni_call, nk_call, nj_call)
     call note_call_start(variant_data)
-    call lsmruc_many_data(a(1:ni_call,1:nk_call,1:nj_call), b(1:ni_call,1:nk_call,1:nj_call), &
-                          c_data(1:ni_call,1:nk_call,1:nj_call), d_data(1:ni_call,1:nk_call,1:nj_call), &
-                          ni_call, nk_call, nj_call)
+    call lsmruc_data(a, b, c_data, d_data, ni, nk, nj)
     call note_call_end(variant_data)
-    if (i < repeats) call allocator_polluter(ni_call, nk_call, nj_call, polluter_passes)
   end do
 
-  !$acc update self(c_decl,c_data,d_decl,d_data)
-  call teardown_resident_mapping_stress(resident_map_pool, resident_map_count, resident_map_elems)
+  call teardown_resident_mapping_stress(resident_map_pool)
   !$acc exit data delete(a,b,c_decl,c_data,d_decl,d_data)
 
-  c_diff = maxval(abs(real(c_decl, real64) - real(c_data, real64)))
-  d_diff = maxval(abs(real(d_decl, real64) - real(d_data, real64)))
-
-  write (*,'(a)') 'OpenACC many-create 3D declare-vs-data reproducer'
-  write (*,'(a,i0)') '  ni      = ', ni
-  write (*,'(a,i0)') '  nk      = ', nk
-  write (*,'(a,i0)') '  nj      = ', nj
+  write (*,'(a)') 'OpenACC declare-vs-data present-table reproducer'
+  write (*,'(a,i0)') '  ni = ', ni
+  write (*,'(a,i0)') '  nk = ', nk
+  write (*,'(a,i0)') '  nj = ', nj
   write (*,'(a,i0)') '  repeats = ', repeats
-  if (jitter_enable /= 0) then
-    write (*,'(a)') '  shape jitter between timed calls = enabled (8-state deterministic cycle)'
-    write (*,'(a,i0,a,i0,a,i0)') '  allocated envelope = ', ni_alloc, ' x ', nk_alloc, ' x ', nj_alloc
-  else
-    write (*,'(a)') '  shape jitter between timed calls = disabled'
-  end if
-  if (resident_map_count > 0 .and. resident_map_elems > 0) then
-    write (*,'(a,i0,a,i0,a,i0,a)') '  resident mapping stress = ', resident_map_count, ' extra mappings x ', &
-                                    resident_map_elems, ' reals each (gap ', resident_map_gap, ' reals)'
-    write (*,'(a,f10.3,a)') '  resident mapping stress bytes = ', real(resident_map_bytes, real64) / 1048576.0_real64, ' MiB'
-  else
-    write (*,'(a)') '  resident mapping stress = disabled'
-  end if
-  if (polluter_passes > 0) then
-    write (*,'(a,i0)') '  polluter passes between timed calls = ', polluter_passes
-    write (*,'(a)') '  untimed polluter uses acc_get_property(...) and uneven acc_malloc chunks'
-    write (*,'(a)') '  target per pass = 80% of currently free device memory'
-  else
-    write (*,'(a)') '  polluter between timed calls = disabled'
-  end if
-  write (*,'(a)') '  local scratch set = 104 separate 3D automatic arrays'
-  write (*,'(a)') '  host arrays are made resident before timed calls via enter data'
-  write (*,'(a)') '  timed entry  = host call start -> first executable after mapping setup'
-  write (*,'(a)') '  timed exit   = just before return/end data -> host call return'
+  write (*,'(a,i0,a,i0,a,i0,a)') '  resident mappings = ', resident_map_count, ' x ', resident_map_elems, ' reals (gap ', resident_map_gap, ')'
+  write (*,'(a,f10.3,a)') '  resident mapping bytes = ', real(resident_map_bytes, real64) / 1048576.0_real64, ' MiB'
   write (*,*)
 
   call print_stats('declare version', variant_declare)
   write (*,*)
   call print_stats('data version', variant_data)
-  write (*,*)
-  write (*,'(a,es12.4)') 'max abs(c_decl - c_data) = ', c_diff
-  write (*,'(a,es12.4)') 'max abs(d_decl - d_data) = ', d_diff
 
   call acc_shutdown(acc_device_nvidia)
 
+900 continue
+
 contains
 
-  subroutine parse_args(ni, nk, nj, repeats, polluter_passes, jitter_enable, resident_map_count, resident_map_elems)
+  subroutine parse_args(ni, nk, nj, repeats, resident_map_count, resident_map_elems, resident_map_gap, show_help)
     integer, intent(inout) :: ni
     integer, intent(inout) :: nk
     integer, intent(inout) :: nj
     integer, intent(inout) :: repeats
-    integer, intent(inout) :: polluter_passes
-    integer, intent(inout) :: jitter_enable
     integer, intent(inout) :: resident_map_count
     integer, intent(inout) :: resident_map_elems
-    character(len=64)      :: arg
+    integer, intent(inout) :: resident_map_gap
+    logical, intent(out)   :: show_help
+    integer                :: iarg
+    character(len=128)     :: arg
+    character(len=128)     :: key
+    character(len=128)     :: value
+    integer                :: eq
 
-    if (command_argument_count() >= 1) then
-      call get_command_argument(1, arg)
-      read (arg, *) ni
+    show_help = .false.
+    iarg = 1
+    do while (iarg <= command_argument_count())
+      call get_command_argument(iarg, arg)
+      eq = index(arg, '=')
+
+      if (eq > 0) then
+        key = trim(arg(:eq-1))
+        value = trim(arg(eq+1:))
+      else
+        key = trim(arg)
+        value = ''
+      end if
+
+      select case (trim(key))
+      case ('-h', '--help')
+        call print_help()
+        show_help = .true.
+        return
+      case ('--ni')
+        call parse_integer_option(iarg, key, value, ni)
+      case ('--nk')
+        call parse_integer_option(iarg, key, value, nk)
+      case ('--nj')
+        call parse_integer_option(iarg, key, value, nj)
+      case ('--repeats')
+        call parse_integer_option(iarg, key, value, repeats)
+      case ('--resident-map-count')
+        call parse_integer_option(iarg, key, value, resident_map_count)
+      case ('--resident-map-elems')
+        call parse_integer_option(iarg, key, value, resident_map_elems)
+      case ('--resident-map-gap')
+        call parse_integer_option(iarg, key, value, resident_map_gap)
+      case default
+        write (error_unit,'(a,a)') 'Unknown option: ', trim(arg)
+        call print_help()
+        error stop 1
+      end select
+
+      iarg = iarg + 1
+    end do
+
+    if (ni <= 0 .or. nk <= 0 .or. nj <= 0 .or. repeats <= 0) then
+      write (error_unit,'(a)') 'ni, nk, nj, and repeats must be positive.'
+      error stop 1
     end if
 
-    if (command_argument_count() >= 2) then
-      call get_command_argument(2, arg)
-      read (arg, *) nk
-    end if
-
-    if (command_argument_count() >= 3) then
-      call get_command_argument(3, arg)
-      read (arg, *) nj
-    end if
-
-    if (command_argument_count() >= 4) then
-      call get_command_argument(4, arg)
-      read (arg, *) repeats
-    end if
-
-    if (command_argument_count() >= 5) then
-      call get_command_argument(5, arg)
-      read (arg, *) polluter_passes
-    end if
-
-    if (command_argument_count() >= 6) then
-      call get_command_argument(6, arg)
-      read (arg, *) jitter_enable
-    end if
-
-    if (command_argument_count() >= 7) then
-      call get_command_argument(7, arg)
-      read (arg, *) resident_map_count
-    end if
-
-    if (command_argument_count() >= 8) then
-      call get_command_argument(8, arg)
-      read (arg, *) resident_map_elems
+    if (resident_map_count < 0 .or. resident_map_elems <= 0 .or. resident_map_gap < 0) then
+      write (error_unit,'(a)') 'resident_map_count must be nonnegative; resident_map_elems must be positive; resident_map_gap must be nonnegative.'
+      error stop 1
     end if
   end subroutine parse_args
 
-  subroutine setup_resident_mapping_stress(resident_map_pool, resident_map_count, resident_map_elems, resident_map_gap)
-    real(real32), allocatable, intent(inout) :: resident_map_pool(:,:)
-    integer, intent(in)                      :: resident_map_count
-    integer, intent(in)                      :: resident_map_elems
-    integer, intent(in)                      :: resident_map_gap
-    integer                                  :: map_stride
-    integer                                  :: imap
+  subroutine parse_integer_option(iarg, key, value, target)
+    integer, intent(inout)     :: iarg
+    character(len=*), intent(in) :: key
+    character(len=*), intent(in) :: value
+    integer, intent(inout)     :: target
+    character(len=128)         :: next_arg
+    integer                    :: ios
 
-    if (resident_map_count <= 0 .or. resident_map_elems <= 0) return
+    if (len_trim(value) == 0) then
+      if (iarg >= command_argument_count()) then
+        write (error_unit,'(a,a)') 'Missing value for option ', trim(key)
+        error stop 1
+      end if
+      iarg = iarg + 1
+      call get_command_argument(iarg, next_arg)
+    else
+      next_arg = value
+    end if
 
-    map_stride = resident_map_elems + max(1, resident_map_gap)
-    allocate(resident_map_pool(map_stride, resident_map_count))
-    resident_map_pool(:,:) = 0.0_real32
+    read (next_arg, *, iostat=ios) target
+    if (ios /= 0) then
+      write (error_unit,'(a,a,a,a)') 'Invalid integer for option ', trim(key), ': ', trim(next_arg)
+      error stop 1
+    end if
+  end subroutine parse_integer_option
+
+  subroutine print_help()
+    write (*,'(a)') 'Usage: ./repro_many_create_3d [options]'
+    write (*,'(a)') 'Options:'
+    write (*,'(a)') '  -h, --help                 Show this help text and exit.'
+    write (*,'(a)') '  --ni N                     Horizontal i extent. Default: 500'
+    write (*,'(a)') '  --nk N                     Vertical extent. Default: 6'
+    write (*,'(a)') '  --nj N                     Horizontal j extent. Default: 500'
+    write (*,'(a)') '  --repeats N                Timed calls per variant. Default: 100'
+    write (*,'(a)') '  --resident-map-count N     Extra long-lived resident mappings. Default: 20000'
+    write (*,'(a)') '  --resident-map-elems N     Reals per extra resident mapping. Default: 64'
+    write (*,'(a)') '  --resident-map-gap N       Gap between mapped slices in the backing pool. Default: 17'
+    write (*,'(a)') 'Values may be passed as --option VALUE or --option=VALUE.'
+  end subroutine print_help
+
+  subroutine setup_resident_mapping_stress(resident_map_pool)
+    real(real32), intent(inout) :: resident_map_pool(:,:)
+    integer                     :: imap
 
     do imap = 1, resident_map_count
       !$acc enter data create(resident_map_pool(1:resident_map_elems,imap))
     end do
   end subroutine setup_resident_mapping_stress
 
-  subroutine teardown_resident_mapping_stress(resident_map_pool, resident_map_count, resident_map_elems)
+  subroutine teardown_resident_mapping_stress(resident_map_pool)
     real(real32), allocatable, intent(inout) :: resident_map_pool(:,:)
-    integer, intent(in)                      :: resident_map_count
-    integer, intent(in)                      :: resident_map_elems
     integer                                  :: imap
-
-    if (.not. allocated(resident_map_pool)) return
 
     do imap = resident_map_count, 1, -1
       !$acc exit data delete(resident_map_pool(1:resident_map_elems,imap))
@@ -857,57 +512,7 @@ contains
     deallocate(resident_map_pool)
   end subroutine teardown_resident_mapping_stress
 
-  subroutine get_alloc_shape(ni_base, nk_base, nj_base, jitter_enable, ni_out, nk_out, nj_out)
-    integer, intent(in)  :: ni_base
-    integer, intent(in)  :: nk_base
-    integer, intent(in)  :: nj_base
-    integer, intent(in)  :: jitter_enable
-    integer, intent(out) :: ni_out
-    integer, intent(out) :: nk_out
-    integer, intent(out) :: nj_out
-    integer              :: idx
-
-    ni_out = ni_base
-    nk_out = nk_base
-    nj_out = nj_base
-
-    if (jitter_enable == 0) return
-
-    do idx = 1, jitter_count
-      ni_out = max(ni_out, max(16, ni_base + jitter_ni_delta(idx)))
-      nk_out = max(nk_out, max(1, nk_base + jitter_nk_delta(idx)))
-      nj_out = max(nj_out, max(16, nj_base + jitter_nj_delta(idx)))
-    end do
-  end subroutine get_alloc_shape
-
-  subroutine get_call_shape(ni_base, nk_base, nj_base, call_index, jitter_enable, ni_out, nk_out, nj_out)
-    integer, intent(in)  :: ni_base
-    integer, intent(in)  :: nk_base
-    integer, intent(in)  :: nj_base
-    integer, intent(in)  :: call_index
-    integer, intent(in)  :: jitter_enable
-    integer, intent(out) :: ni_out
-    integer, intent(out) :: nk_out
-    integer, intent(out) :: nj_out
-    integer              :: idx
-
-    if (jitter_enable == 0) then
-      ni_out = ni_base
-      nk_out = nk_base
-      nj_out = nj_base
-      return
-    end if
-
-    idx = mod(call_index - 1, jitter_count) + 1
-    ni_out = max(16, ni_base + jitter_ni_delta(idx))
-    nk_out = max(1, nk_base + jitter_nk_delta(idx))
-    nj_out = max(16, nj_base + jitter_nj_delta(idx))
-  end subroutine get_call_shape
-
-  subroutine init_inputs(a, b, c_decl, c_data, d_decl, d_data, ni, nk, nj)
-    integer, intent(in)       :: ni
-    integer, intent(in)       :: nk
-    integer, intent(in)       :: nj
+  subroutine init_inputs(a, b, c_decl, c_data, d_decl, d_data)
     real(real32), intent(out) :: a(ni,nk,nj), b(ni,nk,nj), c_decl(ni,nk,nj), c_data(ni,nk,nj), d_decl(ni,nk,nj), d_data(ni,nk,nj)
     integer                   :: i
     integer                   :: j
